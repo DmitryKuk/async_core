@@ -1,7 +1,7 @@
 // Author: Dmitry Kukovinets (d1021976@gmail.com), 07.12.2017, 22:42
 
 
-// Minimalistic multithreaded asyncronous core implementation based on boost::asio::io_service.
+// Minimalistic multithreaded asynchronous core implementation based on boost::asio::io_service.
 // Uses hierarchy of io_services to execute tasks and balance workers.
 // 
 // How does async_core "see" things:
