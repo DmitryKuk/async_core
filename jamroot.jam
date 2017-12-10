@@ -1,0 +1,24 @@
+# Author: Dmitry Kukovinets (d1021976@gmail.com), 07.12.2017, 22:42
+
+
+import os ;
+BOOST_ROOT = [ os.environ BOOST_ROOT ] ;
+if ! $(BOOST_ROOT)
+{
+	import errors ;
+	errors.user-error : "Environment variable BOOST_ROOT not set." ;
+}
+use-project boost : $(BOOST_ROOT) ;
+
+
+
+project async_core
+	: build-dir build
+	: requirements <threading>multi <include>. <include>$(BOOST_ROOT)
+	: default-build <variant>release <link>static
+	;
+
+
+
+build-project src ;
+build-project examples ;
