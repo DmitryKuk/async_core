@@ -29,7 +29,8 @@
 //     - Set workers with appropriate parameters for each service.
 // 2. Create and start async_core.
 // 3. Using async_core::get_io_service() get your io_services, post tasks, etc...
-// 4. When you need to stop, just do all you usually do (close your sockets etc.) and stop the core.
+// 4. Use async_core::join() to freeze current thread until async_core::stop() will be called from another thread.
+// 5. When you need to stop, just do all you usually do (close your sockets etc.) and call async_core::stop().
 // 
 // Why you don't need async_core:
 // - You have single io_service and one or more workers (1) => you can use boost::asio::io_service itself.
@@ -44,6 +45,14 @@
 //     + io_service + some workers for lightweight tasks only;
 //     + io_service + some workers for heavyweight tasks only;
 //     + (parent io_service +) some (maybe, most of) workers for common purposes: runs tasks of both types.
+// 
+// Thread-safety:
+// - async_core:
+//     + distinct objects: safe;
+//     + shared object: safe;
+// - async_core::service_tree, async_core::worker, async_core::workers::parameters:
+//     + distinct objects: safe;
+//     + shared object: unsafe.
 
 
 #ifndef DKUK_ASYNC_CORE_HPP
@@ -301,13 +310,23 @@ public:
 	}
 	
 	
+	inline
+	bool
+	joinable() const noexcept
+	{
+		return this->state_ == state::running && !this->joined_;
+	}
+	
+	
 	void
 	start()
 	{
 		if (this->nodes_.empty())
 			return;
 		
-		std::lock_guard<std::mutex> l{this->start_stop_mutex_};
+		std::lock(this->stop_mutex_, this->join_mutex_);
+		std::lock_guard<std::mutex> stop_lock{this->stop_mutex_, std::adopt_lock};
+		this->join_mutex_.unlock();
 		
 		this->state_ = state::starting;
 		try {
@@ -326,11 +345,18 @@ public:
 		if (this->nodes_.empty())
 			return;
 		
-		std::lock_guard<std::mutex> l{this->start_stop_mutex_};
+		std::lock_guard<std::mutex> stop_lock{this->stop_mutex_};
 		
 		this->state_ = state::stopping;
 		this->stop_workers_();
-		this->state_ = state::idle;
+	}
+	
+	
+	void
+	join()
+	{
+		if (!this->join_workers_())
+			throw std::invalid_argument{"Core is not joinable"};
 	}
 	
 	
@@ -875,11 +901,26 @@ private:
 			n.work_ = boost::none;
 		for (auto &n: this->nodes_)
 			n.io_service_.stop();
-		for (auto &n: this->nodes_) {
-			for (auto &worker: n.workers_)
-				worker.join();
-			n.workers_.clear();
+		this->join_workers_();
+	}
+	
+	
+	bool
+	join_workers_()
+	{
+		bool expected = false;
+		if (this->state_ == state::running && this->joined_.compare_exchange_strong(expected, true)) {
+			std::lock_guard<std::mutex> join_lock{this->join_mutex_};
+			for (auto &n: this->nodes_) {
+				for (auto &worker: n.workers_)
+					worker.join();
+				n.workers_.clear();
+			}
+			this->joined_ = false;
+			this->state_ = state::idle;
+			return true;
 		}
+		return false;
 	}
 	
 	
@@ -916,7 +957,9 @@ private:
 		if (parameters.children_poll_policy != worker::poll::disabled) {
 			std::queue<node *> nodes_queue_;
 			
-			nodes_queue_.push(&n);
+			for (node *child_ptr: n.children_ptrs_)
+				nodes_queue_.push(child_ptr);
+			
 			while (!nodes_queue_.empty()) {
 				node *node_ptr = nodes_queue_.front();
 				nodes_queue_.pop();
@@ -1040,10 +1083,11 @@ private:
 	
 	
 	std::atomic<state> state_{state::idle};
-	std::mutex start_stop_mutex_;
+	std::mutex stop_mutex_, join_mutex_;
 	node_array nodes_;
 	const std::size_t nodes_count_ = 0;
 	exception_handler_type exception_handler_;
+	std::atomic<bool> joined_{false};
 };	// class async_core
 
 
