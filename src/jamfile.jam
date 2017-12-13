@@ -5,5 +5,5 @@ alias async_core
 	:
 	:
 	:
-	: <library>/boost/system
+	: <library>/boost/system <library>/boost/context
 	;
