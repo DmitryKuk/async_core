@@ -5,5 +5,7 @@ alias async_core
 	:
 	:
 	:
-	: <library>/boost/system <library>/boost/context
+	:
+		<c++-template-depth>256
+		<library>/boost/system <library>/boost/context
 	;

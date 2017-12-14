@@ -255,13 +255,11 @@ main()
 	const auto lw_service   = t.add_service(root_service, lw_workers);
 	const auto hw_service   = t.add_service(root_service, hw_workers);
 	
-	t.set_worker_parameters(
-		root_service,
-		0,
-		dkuk::async_core::worker::parameters{
-			.children_poll_policy = dkuk::async_core::worker::poll::disabled
-		}
-	);
+	{
+		dkuk::async_core::worker::parameters p;
+		p.children_poll_policy = dkuk::async_core::worker::poll::disabled;
+		t.set_worker_parameters(root_service, 0, p);
+	}
 	
 	
 	dkuk::async_core core{t};

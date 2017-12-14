@@ -1,6 +1,63 @@
 // Author: Dmitry Kukovinets (d1021976@gmail.com), 10.03.2017, 17:24
 
 
+// Improved version of boost::asio::spawn() function. Based on Boost.Context (boost::context::continuation)
+// instead of Boost.Coroutine (which is deprecated). Also, it allows to pass additional arguments to your function
+// (see example 1). Spawned coroutines can be used witout Boost.Asio'a async operations manually (see example 2).
+// 
+// 
+// Example 1: spawning coroutine with arguments.
+// void my_fn(boost::asio::ip::tcp::socket &s, int count, dkuk::coroutine_context context)
+// {
+//     boost::asio::system_timer timer{context.get_io_service()};
+//     for (int i = 0; i < count; ++i) {
+//         std::cout << "Sleep #" << i << "..." << std::endl;
+//         timer.expires_from_now(std::chrono::seconds(1));
+//         timer.async_wait(context);
+//     }
+//     
+//     std::size_t bytes_transferred1 = s.async_receive(/* ... */, context);
+//     
+//     boost::system::error_code ec;
+//     std::size_t bytes_transferred2 = s.async_receive(/* ... */, context[ec]);	// External error code
+//     if (ec)
+//         throw boost::system::system_error{ec};
+// }
+// 
+// boost::asio::io_service io_service;
+// boost::asio::ip::tcp::socket s;
+// dkuk::spawn(io_service, my_fn, std::ref(s), 10);
+// io_service.run();
+// 
+// 
+// Example 2: continue coroutine manually.
+// void call_later_0(std::function<void()> fn) { ... }
+// void call_later_1(std::function<void(int)> fn) { ... }
+// void call_later_2(std::function<void(int, std::string)> fn)
+// {
+//     // Save fn somewhere, (maybe, even return) and call later:
+//     fn(123, "Hello, world!");
+// }
+// 
+// void my_fn(dkuk::coroutine_context context)
+// {
+//     dkuk::coroutine_context::value<> value_0;
+//     call_later_0(context.get_caller(value_0));
+//     value_0.yield_and_get();
+//     std::cout << "Just continued." << std::endl;
+//     
+//     dkuk::coroutine_context::value<int> value_1;
+//     call_later_1(context.get_caller(value_1));
+//     int res_1 = value_1.yield_and_get();
+//     std::cout << "Got: " << res_1 << '.' << std::endl;
+//     
+//     dkuk::coroutine_context::value<int, std::string> value_2;
+//     call_later_2(context.get_caller(value_2));
+//     std::tuple<int, std::string> res_2 = value_2.yield_and_get();
+//     std::cout << "Got: " << std::get<0>(res_2) << ' ' << std::get<1>(res_2) << '.' << std::endl;
+// }
+// 
+// 
 // Spawn signatures:
 //     spawn(
 //            <strand or io_service or coroutine_context>
@@ -32,7 +89,7 @@
 #include <boost/asio/handler_type.hpp>
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/strand.hpp>
-#include <boost/context/all.hpp>
+#include <boost/context/continuation.hpp>
 #include <boost/system/error_code.hpp>
 
 
@@ -153,7 +210,7 @@ private:
 		void
 		coro_call()
 		{
-			if (!static_cast<bool>(this->coro_caller_))
+			if (!this->coro_caller_)
 				throw coroutine_expired{};
 			this->coro_caller_ = this->coro_caller_.resume();
 			if (this->exception_ptr_)
@@ -165,7 +222,7 @@ private:
 		void
 		coro_yield()
 		{
-			if (!static_cast<bool>(*this->coro_execution_context_ptr_))
+			if (!*this->coro_execution_context_ptr_)
 				throw coroutine_expired{};
 			*this->coro_execution_context_ptr_ = this->coro_execution_context_ptr_->resume();
 		}
@@ -180,11 +237,7 @@ private:
 			const std::index_sequence<Is...> * = nullptr
 		)
 		{
-			std::bind(
-				std::move(fn),
-				std::move(std::get<Is>(std::forward<ArgsTuple>(args_tuple)))...,
-				std::move(context)
-			)();
+			std::forward<Fn>(fn)(std::move(std::get<Is>(std::forward<ArgsTuple>(args_tuple)))..., std::move(context));
 		}
 		
 		
@@ -242,7 +295,7 @@ private:
 	public:
 		inline
 		primitive_caller(
-			std::shared_ptr<coroutine_context::coro_data> coro_data_ptr
+			std::shared_ptr<coro_data> coro_data_ptr
 		) noexcept:
 			coro_data_ptr_{std::move(coro_data_ptr)}
 		{}
@@ -277,14 +330,11 @@ private:
 			this->coro_data_ptr_->coro_call();
 		}
 	private:
-		std::shared_ptr<coroutine_context::coro_data> coro_data_ptr_;
+		std::shared_ptr<coro_data> coro_data_ptr_;
 	};	// class primitive_caller
 public:
 	template<class... Ts>
 	class value;
-	
-	template<class... Ts>
-	class asio_caller;
 	
 	template<class... Ts>
 	class caller;
@@ -317,28 +367,8 @@ public:
 	boost::asio::io_service &
 	get_io_service() const
 	{
-		const auto coro_data_ptr = this->lock();
+		const auto coro_data_ptr = this->lock_();
 		return coro_data_ptr->strand().get_io_service();
-	}
-	
-	
-	template<class... Ts>
-	inline
-	asio_caller<Ts...>
-	get_asio_caller(
-		std::tuple<Ts...> &value
-	) const
-	{
-		return coroutine_context::asio_caller<Ts...>{*this, value};
-	}
-	
-	
-	template<class... Ts>
-	inline
-	asio_caller<Ts...>
-	get_asio_caller() const
-	{
-		return coroutine_context::asio_caller<Ts...>{*this};
 	}
 	
 	
@@ -346,7 +376,7 @@ public:
 	inline
 	caller<Ts...>
 	get_caller(
-		std::tuple<Ts...> &value
+		typename caller<Ts...>::value_type &value
 	) const
 	{
 		return coroutine_context::caller<Ts...>{*this, value};
@@ -359,15 +389,6 @@ public:
 	get_caller() const
 	{
 		return coroutine_context::caller<Ts...>{*this};
-	}
-	
-	
-	inline
-	void
-	yield() const
-	{
-		const auto raw_coro_data_ptr = this->lock().get();	// Don't share ownership while suspended!
-		raw_coro_data_ptr->coro_yield();
 	}
 	
 	
@@ -390,9 +411,26 @@ private:
 	{}
 	
 	
+	static inline
+	void
+	continue_(std::shared_ptr<coro_data> coro_data_ptr)
+	{
+		coro_data_ptr->strand().post(coroutine_context::primitive_caller{coro_data_ptr});
+	}
+	
+	
+	inline
+	void
+	yield_() const
+	{
+		const auto raw_coro_data_ptr = this->lock_().get();	// Don't share ownership while suspended!
+		raw_coro_data_ptr->coro_yield();
+	}
+	
+	
 	inline
 	std::shared_ptr<coro_data>
-	lock() const
+	lock_() const
 	{
 		auto res = this->weak_coro_data_ptr_.lock();
 		if (res == nullptr)
@@ -403,7 +441,7 @@ private:
 	
 	inline
 	boost::system::error_code &
-	best_ec(
+	best_ec_(
 		boost::system::error_code &internal_ec
 	) const noexcept
 	{
@@ -420,6 +458,9 @@ private:
 	
 	template<class... Ts>
 	friend class value;
+	
+	template<class... Ts>
+	friend class caller;
 	
 	template<class... CoroArgs>
 	friend inline void spawn(boost::asio::io_service::strand strand, CoroArgs &&... coro_args);
@@ -464,7 +505,7 @@ public:
 	yield_and_get()
 	{
 		if (++this->ready_ != 2)
-			this->context_.yield();
+			this->context_.yield_();
 		return std::move(this->value_);
 	}
 private:
@@ -511,7 +552,7 @@ public:
 	yield_and_get()
 	{
 		if (++this->ready_ != 2)
-			this->context_.yield();
+			this->context_.yield_();
 		return std::move(this->value_);
 	}
 private:
@@ -553,7 +594,7 @@ public:
 	yield_and_get()
 	{
 		if (++this->ready_ != 2)
-			this->context_.yield();
+			this->context_.yield_();
 	}
 private:
 	coroutine_context context_;
@@ -588,7 +629,7 @@ public:
 	)
 	{
 		if (++this->ready_ == 2) {
-			this->context_.best_ec(this->ec_) = std::move(ec);
+			this->context_.best_ec_(this->ec_) = std::move(ec);
 			this->value_ = std::forward_as_tuple(std::forward<Args>(args)...);
 			return true;
 		}
@@ -601,7 +642,7 @@ public:
 	yield_and_get()
 	{
 		if (++this->ready_ != 2)
-			this->context_.yield();
+			this->context_.yield_();
 		if (this->ec_)	// Don't assert external ec, if it is set!
 			throw boost::system::system_error{this->ec_};
 		return std::move(this->value_);
@@ -640,7 +681,7 @@ public:
 	)
 	{
 		if (++this->ready_ == 2) {
-			this->context_.best_ec(this->ec_) = std::move(ec);
+			this->context_.best_ec_(this->ec_) = std::move(ec);
 			this->value_ = std::forward<Arg>(arg);
 			return true;
 		}
@@ -653,7 +694,7 @@ public:
 	yield_and_get()
 	{
 		if (++this->ready_ != 2)
-			this->context_.yield();
+			this->context_.yield_();
 		if (this->ec_)	// Don't assert external ec, if it is set!
 			throw boost::system::system_error{this->ec_};
 		return std::move(this->value_);
@@ -690,7 +731,7 @@ public:
 	)
 	{
 		if (++this->ready_ == 2) {
-			this->context_.best_ec(this->ec_) = std::move(ec);
+			this->context_.best_ec_(this->ec_) = std::move(ec);
 			return true;
 		}
 		return false;
@@ -702,7 +743,7 @@ public:
 	yield_and_get()
 	{
 		if (++this->ready_ != 2)
-			this->context_.yield();
+			this->context_.yield_();
 		if (this->ec_)	// Don't assert external ec, if it is set!
 			throw boost::system::system_error{this->ec_};
 	}
@@ -711,99 +752,6 @@ private:
 	std::atomic<unsigned int> ready_{0};
 	boost::system::error_code ec_;
 };	// class coroutine_context::value<boost::system::error_code>
-
-
-
-template<class... Ts>
-class coroutine_context::asio_caller
-{
-public:
-	using value_type = coroutine_context::value<Ts...>;
-	
-	
-	
-	inline
-	asio_caller(
-		const coroutine_context &c
-	):
-		coro_data_ptr_{c.lock()}
-	{}
-	
-	
-	inline
-	asio_caller(
-		const coroutine_context &c,
-		value_type &value
-	):
-		coro_data_ptr_{c.lock()},
-		value_ptr_{std::addressof(value)}
-	{}
-	
-	
-	asio_caller(
-		const asio_caller &other
-	) = default;
-	
-	
-	asio_caller &
-	operator=(
-		const asio_caller &other
-	) = default;
-	
-	
-	asio_caller(
-		asio_caller &&other
-	) = default;
-	
-	
-	asio_caller &
-	operator=(
-		asio_caller &&other
-	) = default;
-	
-	
-	inline
-	boost::asio::io_service &
-	get_io_service() const noexcept
-	{
-		return this->coro_data_ptr_->strand().get_io_service();
-	}
-	
-	
-	inline
-	coroutine_context
-	get_context() const noexcept
-	{
-		return this->coro_data_ptr_;
-	}
-	
-	
-	inline
-	void
-	bind_value(
-		value_type &value
-	) noexcept
-	{
-		this->value_ptr_ = std::addressof(value);
-	}
-	
-	
-	template<class... Args>
-	inline
-	void
-	operator()(
-		Args &&... args
-	) const
-	{
-		if (this->value_ptr_ == nullptr)
-			throw std::logic_error{"Incorrect coroutine caller: Value not bound"};
-		if (this->value_ptr_->set(std::forward<Args>(args)...))	// Direct call
-			this->coro_data_ptr_->coro_call();
-	}
-private:
-	std::shared_ptr<coroutine_context::coro_data> coro_data_ptr_;
-	value_type *value_ptr_ = nullptr;
-};	// class coroutine_context::asio_caller
 
 
 
@@ -819,7 +767,7 @@ public:
 	caller(
 		const coroutine_context &c
 	):
-		coro_data_ptr_{c.lock()}
+		coro_data_ptr_{c.lock_()}
 	{}
 	
 	
@@ -828,7 +776,7 @@ public:
 		const coroutine_context &c,
 		value_type &value
 	):
-		coro_data_ptr_{c.lock()},
+		coro_data_ptr_{c.lock_()},
 		value_ptr_{std::addressof(value)}
 	{}
 	
@@ -890,8 +838,8 @@ public:
 	{
 		if (this->value_ptr_ == nullptr)
 			throw std::logic_error{"Incorrect coroutine caller: Value not bound"};
-		if (this->value_ptr_->set(std::forward<Args>(args)...))	// Guaranteed call (may be slower, than direct)
-			this->coro_data_ptr_->strand().post(coroutine_context::primitive_caller{this->coro_data_ptr_});
+		if (this->value_ptr_->set(std::forward<Args>(args)...))
+			coroutine_context::continue_(this->coro_data_ptr_);
 	}
 private:
 	std::shared_ptr<coroutine_context::coro_data> coro_data_ptr_;
@@ -969,7 +917,7 @@ namespace asio {
 	template<class Ret, class... Args>										\
 	struct handler_type<src_type, Ret (Args...)>							\
 	{																		\
-		using type = dkuk::coroutine_context::asio_caller<Args...>;			\
+		using type = dkuk::coroutine_context::caller<Args...>;				\
 	}	/* struct handler_type<src_type, Ret (Args...)> */
 
 
@@ -996,7 +944,7 @@ DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_SERIES(dkuk::coroutine_context);
 
 
 template<class... Ts>
-class async_result<dkuk::coroutine_context::asio_caller<Ts...>>
+class async_result<dkuk::coroutine_context::caller<Ts...>>
 {
 public:
 	using type = typename dkuk::coroutine_context::value<Ts...>::type;
@@ -1005,7 +953,7 @@ public:
 	
 	inline
 	async_result(
-		dkuk::coroutine_context::asio_caller<Ts...> &c
+		dkuk::coroutine_context::caller<Ts...> &c
 	) noexcept:
 		value_{c.get_context()}
 	{
@@ -1021,7 +969,7 @@ public:
 	}
 private:
 	dkuk::coroutine_context::value<Ts...> value_;
-};	// class async_result<dkuk::coroutine_context::asio_caller<Ts...>>
+};	// class async_result<dkuk::coroutine_context::caller<Ts...>>
 
 
 };	// namespace asio

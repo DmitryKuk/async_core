@@ -425,7 +425,7 @@ private:
 	class node_array
 	{
 	public:
-		using node_storage_type = std::aligned_storage_t<sizeof(node), std::alignment_of<node>::value>::type;
+		using node_storage_type = typename std::aligned_storage<sizeof(node), std::alignment_of<node>::value>::type;
 		
 		
 		
@@ -848,6 +848,7 @@ private:
 			case worker::poll::run_one:
 				return &boost::asio::io_service::run_one;
 		}
+		return nullptr;
 	}
 	
 	
