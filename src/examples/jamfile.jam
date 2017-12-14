@@ -1,0 +1,8 @@
+# Author: Dmitry Kukovinets (d1021976@gmail.com), 07.12.2017, 22:42
+
+
+exe basic : basic.cpp /async_core//async_core ;
+install install-basic : basic : <location>../../build/bin/examples ;
+
+exe 1_worker_1_service : 1_worker_1_service.cpp /async_core//async_core ;
+install install-1_worker_1_service : 1_worker_1_service : <location>../../build/bin/examples ;

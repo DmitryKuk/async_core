@@ -1,8 +1,0 @@
-# Author: Dmitry Kukovinets (d1021976@gmail.com), 07.12.2017, 22:42
-
-
-exe demo_async_core : demo_async_core.cpp ../dkuk//async_core ;
-install install-demo_async_core : demo_async_core : <location>../build/bin/examples ;
-
-exe demo_1_worker_1_service : demo_1_worker_1_service.cpp ../dkuk//async_core /boost/context ;
-install install-demo_1_worker_1_service : demo_1_worker_1_service : <location>../build/bin/examples ;

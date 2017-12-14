@@ -332,10 +332,10 @@ public:
 		try {
 			this->start_workers_();
 		} catch (...) {
-			this->state_ = state::idle;
+			this->state_.store(state::idle, std::memory_order_release);
 			throw;
 		}
-		this->state_ = state::running;
+		this->state_.store(state::running, std::memory_order_release);
 	}
 	
 	
@@ -346,16 +346,16 @@ public:
 			return;
 		
 		std::lock_guard<std::mutex> stop_lock{this->stop_mutex_};
-		
-		this->state_ = state::stopping;
+		this->state_.store(state::stopping, std::memory_order_release);
 		this->stop_workers_();
+		this->join_workers_();
 	}
 	
 	
 	void
 	join()
 	{
-		if (!this->join_workers_())
+		if (this->state_ != state::running || !this->join_workers_())
 			throw std::invalid_argument{"Core is not joinable"};
 	}
 	
@@ -902,23 +902,21 @@ private:
 			n.work_ = boost::none;
 		for (auto &n: this->nodes_)
 			n.io_service_.stop();
-		this->join_workers_();
 	}
 	
 	
 	bool
 	join_workers_()
 	{
-		bool expected = false;
-		if (this->state_ == state::running && this->joined_.compare_exchange_strong(expected, true)) {
+		if (!this->joined_.exchange(true)) {	// Not joined before
 			std::lock_guard<std::mutex> join_lock{this->join_mutex_};
 			for (auto &n: this->nodes_) {
 				for (auto &worker: n.workers_)
 					worker.join();
 				n.workers_.clear();
 			}
-			this->joined_ = false;
-			this->state_ = state::idle;
+			this->joined_.store(false, std::memory_order_release);
+			this->state_.store(state::idle, std::memory_order_release);
 			return true;
 		}
 		return false;

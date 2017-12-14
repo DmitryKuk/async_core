@@ -14,11 +14,22 @@ use-project boost : $(BOOST_ROOT) ;
 
 project async_core
 	: build-dir build
-	: requirements <threading>multi <include>. <include>$(BOOST_ROOT)
+	: requirements <threading>multi
 	: default-build <variant>release <link>static
 	;
 
 
 
+alias async_core
+	:
+	:
+	:
+	:
+		<c++-template-depth>256
+		<include>src/include <include>$(BOOST_ROOT)
+		<library>/boost/system <library>/boost/context
+	;
+
+
+
 build-project src ;
-build-project examples ;

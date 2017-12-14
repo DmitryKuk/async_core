@@ -1,11 +1,4 @@
-# Author: Dmitry Kukovinets (d1021976@gmail.com), 07.12.2017, 22:42
+# Author: Dmitry Kukovinets (d1021976@gmail.com), 14.12.2017, 13:#5
 
 
-alias async_core
-	:
-	:
-	:
-	:
-		<c++-template-depth>256
-		<library>/boost/system <library>/boost/context
-	;
+build-project examples ;
