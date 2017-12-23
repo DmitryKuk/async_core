@@ -1,5 +1,10 @@
 // Author: Dmitry Kukovinets (d1021976@gmail.com), 08.12.2017, 14:45
 
+
+// This example demonstrates basic usage of async_core.
+// Create core, get io_services, post tasks, start and stop the core.
+
+
 #include <chrono>
 #include <exception>
 #include <iostream>

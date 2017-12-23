@@ -1,5 +1,24 @@
 // Author: Dmitry Kukovinets (d1021976@gmail.com), 12.12.2017, 22:57
 
+
+// This example demonstrates usage of async_core in some real complex (more or less) application.
+// 
+// Application and architecture details:
+// - 1 io_service and 1 worker for lightweight tasks (0.3s sleep);
+// - 1 io_service and 1 worker for heavyweight tasks (5s sleep);
+// - 5 universal workers (can execute tasks from both io_services);
+// - 90% of all tasks are lightweight.
+// 
+// Output table columns:
+// - time (in seconds)
+// - lightweight tasks (+ added) / executed lightweight tasks
+// - heavyweight tasks (+ added) / executed heavyweight tasks
+// - total tasks (+ added) / executed total tasks
+// - average performance (tasks per second) from start: lightweight / heavyweight / total
+// 
+// Use Ctrl+C for exit.
+
+
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -41,7 +60,6 @@ post_tasks(
 	std::chrono::milliseconds::rep lw_task_ms,
 	std::chrono::milliseconds::rep hw_task_ms,
 	double lw_tasks_part,
-	dkuk::async_core::service_id_type root_service,
 	dkuk::async_core::service_id_type lw_service,
 	dkuk::async_core::service_id_type hw_service,
 	std::atomic<std::size_t> &lw_posted,
@@ -55,7 +73,7 @@ post_tasks(
 	std::uniform_int_distribution<std::chrono::seconds::rep> sleep_seconds_dist{0, 5};
 	std::bernoulli_distribution is_lw_task_dist{lw_tasks_part};
 	
-	boost::asio::system_timer timer{core.get_io_service(root_service)};
+	boost::asio::system_timer timer{context.get_io_service()};
 	
 	while (core.get_state() == dkuk::async_core::state::running) {
 		// Post new task avoiding too many tasks
@@ -153,7 +171,6 @@ print_avg_tasks(
 void
 print_statistics(
 	dkuk::async_core &core,
-	dkuk::async_core::service_id_type root_service,
 	std::atomic<std::size_t> &lw_posted,
 	std::atomic<std::size_t> &lw_executed,
 	std::atomic<std::size_t> &hw_posted,
@@ -161,7 +178,7 @@ print_statistics(
 	dkuk::coroutine_context context
 )
 {
-	boost::asio::system_timer timer{core.get_io_service(root_service)};
+	boost::asio::system_timer timer{context.get_io_service()};
 	
 	std::chrono::steady_clock steady_clock;
 	const auto global_start_time = steady_clock.now();
@@ -246,20 +263,15 @@ main()
 		lw_tasks_part = 0.90;
 	
 	constexpr std::size_t
+		root_workers  = 5,
 		lw_workers    = 1,
 		hw_workers    = 1;
 	
 	
 	dkuk::async_core::service_tree t;
-	const auto root_service = t.add_service(0, 1);
+	const auto root_service = t.add_service(0, root_workers);	// Root service always has id 0
 	const auto lw_service   = t.add_service(root_service, lw_workers);
 	const auto hw_service   = t.add_service(root_service, hw_workers);
-	
-	{
-		dkuk::async_core::worker::parameters p;
-		p.children_poll_policy = dkuk::async_core::worker::poll::disabled;
-		t.set_worker_parameters(root_service, 0, p);
-	}
 	
 	
 	dkuk::async_core core{t};
@@ -271,15 +283,17 @@ main()
 		hw_posted{0};
 	
 	
+	boost::asio::io_service helper_io_service;
+	
+	
 	// Add tasks automatically
 	dkuk::spawn(
-		core.get_io_service(root_service),
+		helper_io_service,
 		post_tasks,
 		std::ref(core),
 		lw_task_ms,
 		hw_task_ms,
 		lw_tasks_part,
-		root_service,
 		lw_service,
 		hw_service,
 		std::ref(lw_executed),
@@ -291,10 +305,9 @@ main()
 	
 	// Display statistics
 	dkuk::spawn(
-		core.get_io_service(root_service),
+		helper_io_service,
 		print_statistics,
 		std::ref(core),
-		root_service,
 		std::ref(lw_executed),
 		std::ref(lw_posted),
 		std::ref(hw_executed),
@@ -303,15 +316,18 @@ main()
 	
 	
 	// Wait for exit
-	boost::asio::signal_set signals{core.get_io_service(root_service), SIGINT, SIGTERM};
+	boost::asio::signal_set signals{helper_io_service, SIGINT, SIGTERM};
 	signals.async_wait(
-		[&core](boost::system::error_code /* ec */, int /* signal_number */)
+		[&core, &helper_io_service](boost::system::error_code /* ec */, int /* signal_number */)
 		{
 			core.stop();
+			helper_io_service.stop();
 		}
 	);
 	
 	
-	core.join();
+	helper_io_service.run();
+	
+	
 	return 0;
 }

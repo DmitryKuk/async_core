@@ -4,5 +4,8 @@
 exe basic : basic.cpp /async_core//async_core ;
 install install-basic : basic : <location>../build/bin/examples ;
 
-exe 1_worker_1_service : 1_worker_1_service.cpp /async_core//async_core ;
-install install-1_worker_1_service : 1_worker_1_service : <location>../build/bin/examples ;
+exe simple_app : simple_app.cpp /async_core//async_core ;
+install install-simple_app : simple_app : <location>../build/bin/examples ;
+
+exe complex_app : complex_app.cpp /async_core//async_core ;
+install install-complex_app : complex_app : <location>../build/bin/examples ;
