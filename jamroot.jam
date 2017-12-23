@@ -26,10 +26,10 @@ alias async_core
 	:
 	:
 		<c++-template-depth>256
-		<include>src/include <include>$(BOOST_ROOT)
+		<include>include <include>$(BOOST_ROOT)
 		<library>/boost/system <library>/boost/context
 	;
 
 
 
-build-project src ;
+build-project examples ;
