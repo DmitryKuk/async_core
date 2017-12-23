@@ -43,17 +43,17 @@
 // {
 //     dkuk::coroutine_context::value<> value_0;
 //     call_later_0(context.get_caller(value_0));
-//     value_0.yield_and_get();
+//     value_0.get();
 //     std::cout << "Just continued." << std::endl;
 //     
 //     dkuk::coroutine_context::value<int> value_1;
 //     call_later_1(context.get_caller(value_1));
-//     int res_1 = value_1.yield_and_get();
+//     int res_1 = value_1.get();
 //     std::cout << "Got: " << res_1 << '.' << std::endl;
 //     
 //     dkuk::coroutine_context::value<int, std::string> value_2;
 //     call_later_2(context.get_caller(value_2));
-//     std::tuple<int, std::string> res_2 = value_2.yield_and_get();
+//     std::tuple<int, std::string> res_2 = value_2.get();
 //     std::cout << "Got: " << std::get<0>(res_2) << ' ' << std::get<1>(res_2) << '.' << std::endl;
 // }
 // 
@@ -502,7 +502,7 @@ public:
 	
 	inline
 	type &&
-	yield_and_get()
+	get()
 	{
 		if (++this->ready_ != 2)
 			this->context_.yield_();
@@ -549,7 +549,7 @@ public:
 	
 	inline
 	type &&
-	yield_and_get()
+	get()
 	{
 		if (++this->ready_ != 2)
 			this->context_.yield_();
@@ -591,7 +591,7 @@ public:
 	
 	inline
 	void
-	yield_and_get()
+	get()
 	{
 		if (++this->ready_ != 2)
 			this->context_.yield_();
@@ -639,7 +639,7 @@ public:
 	
 	inline
 	type &&
-	yield_and_get()
+	get()
 	{
 		if (++this->ready_ != 2)
 			this->context_.yield_();
@@ -691,7 +691,7 @@ public:
 	
 	inline
 	type &&
-	yield_and_get()
+	get()
 	{
 		if (++this->ready_ != 2)
 			this->context_.yield_();
@@ -740,7 +740,7 @@ public:
 	
 	inline
 	void
-	yield_and_get()
+	get()
 	{
 		if (++this->ready_ != 2)
 			this->context_.yield_();
@@ -965,7 +965,7 @@ public:
 	typename dkuk::spawn_impl::void_or_rvalue<type>::type
 	get()
 	{
-		return this->value_.yield_and_get();
+		return this->value_.get();
 	}
 private:
 	dkuk::coroutine_context::value<Ts...> value_;
