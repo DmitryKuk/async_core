@@ -32,4 +32,5 @@ alias async_core
 
 
 
+build-project test ;
 build-project examples ;

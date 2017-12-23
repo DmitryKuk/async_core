@@ -1,0 +1,6 @@
+# Author: Dmitry Kukovinets (d1021976@gmail.com), 24.12.2017, 01:10
+
+
+import testing ;
+
+run spawn_value_args.cpp /async_core//async_core ;
