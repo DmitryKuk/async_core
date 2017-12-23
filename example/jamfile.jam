@@ -2,10 +2,10 @@
 
 
 exe basic : basic.cpp /async_core//async_core ;
-install install-basic : basic : <location>../build/bin/examples ;
+install install-basic : basic : <location>../build/bin/example ;
 
 exe simple_app : simple_app.cpp /async_core//async_core ;
-install install-simple_app : simple_app : <location>../build/bin/examples ;
+install install-simple_app : simple_app : <location>../build/bin/example ;
 
 exe complex_app : complex_app.cpp /async_core//async_core ;
-install install-complex_app : complex_app : <location>../build/bin/examples ;
+install install-complex_app : complex_app : <location>../build/bin/example ;
