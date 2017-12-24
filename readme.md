@@ -8,14 +8,14 @@ async_core is small project containing several parts (which can be used separate
 # What is it for?
 - For example, you write application with asyncronous core, but you don't want manage your io_contexts manually.
 - Another example: you want to use stackful coroutines in your application, but [`boost::asio::spawn`](http://www.boost.org/doc/libs/1_66_0/doc/html/boost_asio/reference/spawn.html) uses deprecated [Boost.Coroutine](http://www.boost.org/doc/libs/1_66_0/libs/coroutine/doc/html/index.html).
-- Or, maybe, you know about [asyncio](https://docs.python.org/3/library/asyncio) from Python and want something like `asyncio_loop.run_until_complete(my_coro())` (now in progress) or want to use [`std::future`](http://en.cppreference.com/w/cpp/thread/future)-like access to coroutines result (now in progress).
+- Or, maybe, you know about [asyncio](https://docs.python.org/3/library/asyncio) from Python and want something like `asyncio_loop.run_until_complete(my_coro())` or want to use [`std::future`](http://en.cppreference.com/w/cpp/thread/future)-like access to coroutines result.
 
 # Components
 - *Header-only* asyncronous core implementation:
     + `dkuk::async_core` in [`include/dkuk/async_core.hpp`](include/dkuk/async_core.hpp)
     + dependencies: [Boost.Asio](http://www.boost.org/doc/libs/1_66_0/doc/html/boost_asio.html), [Boost.Optional](http://www.boost.org/doc/libs/1_66_0/libs/optional/doc/html/index.html)
 - *Header-only* helpers for coroutines:
-    + `dkuk::spawn` + `dkuk::coroutine_context` in [`include/dkuk/spawn.hpp`](include/dkuk/spawn.hpp)
+    + `dkuk::coroutine_context` + `dkuk::coroutine_future` + `dkuk::spawn` + `dkuk::spawn_with_future` in [`include/dkuk/spawn.hpp`](include/dkuk/spawn.hpp)
     + based on [`boost::asio::spawn`](http://www.boost.org/doc/libs/1_66_0/doc/html/boost_asio/reference/spawn.html) and [`boost::context::continuation`](http://www.boost.org/doc/libs/1_66_0/libs/context/doc/html/context/cc/class__continuation_.html)
     + dependencies: [Boost.Asio](http://www.boost.org/doc/libs/1_66_0/doc/html/boost_asio.html), [Boost.Context](http://www.boost.org/doc/libs/1_66_0/libs/context/doc/html/index.html)
 
@@ -33,8 +33,8 @@ MIT license. See [license.txt](license.txt).
 
 # What next?
 - See detailed description in `*.hpp` files.
-- Check examples in [`example/`](example) directory.
-- Build all examples and run test with [Boost.Build](http://www.boost.org/build/) *(in this project you can use `b2` from your Boost installation)*.
+- Check examples in [`example/`](example) directory and unit-tests in [`test/`](test) directory.
+- Build all examples and run tests with [Boost.Build](http://www.boost.org/build/) *(in this project you can use `b2` from your Boost installation)*.
 - Check `build/bin/` directory.
 - Star or fork [the repository](https://github.com/DmitryKuk/async_core), open issues and have a nice day!
 

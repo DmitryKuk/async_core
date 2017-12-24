@@ -28,7 +28,7 @@
 #include <boost/asio/system_timer.hpp>
 
 #include <dkuk/async_core.hpp>
-#include <dkuk/spawn.hpp>
+#include <dkuk/coroutine.hpp>
 
 
 namespace {

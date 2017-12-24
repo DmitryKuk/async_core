@@ -1,9 +1,11 @@
 // Author: Dmitry Kukovinets (d1021976@gmail.com), 10.03.2017, 17:24
 
 
-// Improved version of boost::asio::spawn() function. Based on Boost.Context (boost::context::continuation)
-// instead of Boost.Coroutine (which is deprecated). Also, it allows to pass additional arguments to your function
-// (see example 1). Spawned coroutines can be used witout Boost.Asio'a async operations manually (see example 2).
+// Improved version of boost::asio::spawn() function + some useful tools. Based on Boost.Context
+// (boost::context::continuation) instead of Boost.Coroutine (which is deprecated). Also, it allows to pass
+// additional arguments to your function (see example 1). Spawned coroutines can be used witout Boost.Asio'a async
+// operations manually (see example 2).
+// See coroutine_future and spawn_with_future() for std::future-like API.
 // 
 // 
 // Example 1: spawning coroutine with arguments.
