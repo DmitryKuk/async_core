@@ -897,14 +897,7 @@ public:
 			throw std::future_error{std::future_errc::promise_already_satisfied};
 		
 		this->value_.emplace(std::forward<T1>(value));
-		this->ready_.store(true, std::memory_order_release);
-		
-		this->ready_condition_.notify_all();
-		
-		for (auto &handler: this->handlers_)
-			boost::asio::post(*this->io_context_ptr_, std::move(handler));
-		this->handlers_.clear();
-		this->handlers_.shrink_to_fit();
+		this->notify_ready_();
 	}
 	
 	
@@ -917,7 +910,9 @@ public:
 		std::lock_guard<std::mutex> lock{this->mutex_};
 		if (this->ready())
 			throw std::future_error{std::future_errc::promise_already_satisfied};
+		
 		this->exception_ptr_ = std::move(exception_ptr);
+		this->notify_ready_();
 	}
 	
 	
@@ -926,6 +921,8 @@ public:
 	get()
 	{
 		this->wait();
+		if (this->exception_ptr_ != nullptr)
+			std::rethrow_exception(this->exception_ptr_);
 		return this->value_.get();
 	}
 	
@@ -999,6 +996,22 @@ public:
 		return init.result.get();
 	}
 private:
+	inline
+	void
+	notify_ready_()
+	{
+		this->ready_.store(true, std::memory_order_release);
+		
+		this->ready_condition_.notify_all();
+		
+		for (auto &handler: this->handlers_)
+			boost::asio::post(*this->io_context_ptr_, std::move(handler));
+		this->handlers_.clear();
+		this->handlers_.shrink_to_fit();
+	}
+	
+	
+	
 	boost::asio::io_context *io_context_ptr_;
 	std::mutex mutex_;
 	std::condition_variable ready_condition_;
@@ -1040,14 +1053,7 @@ public:
 			throw std::future_error{std::future_errc::promise_already_satisfied};
 		
 		this->value_ptr_ = std::addressof(value);
-		this->ready_.store(true, std::memory_order_release);
-		
-		this->ready_condition_.notify_all();
-		
-		for (auto &handler: this->handlers_)
-			boost::asio::post(*this->io_context_ptr_, std::move(handler));
-		this->handlers_.clear();
-		this->handlers_.shrink_to_fit();
+		this->notify_ready_();
 	}
 	
 	
@@ -1061,6 +1067,7 @@ public:
 		if (this->ready())
 			throw std::future_error{std::future_errc::promise_already_satisfied};
 		this->exception_ptr_ = std::move(exception_ptr);
+		this->notify_ready_();
 	}
 	
 	
@@ -1069,6 +1076,8 @@ public:
 	get()
 	{
 		this->wait();
+		if (this->exception_ptr_ != nullptr)
+			std::rethrow_exception(this->exception_ptr_);
 		return *this->value_ptr_;
 	}
 	
@@ -1142,6 +1151,22 @@ public:
 		return init.result.get();
 	}
 private:
+	inline
+	void
+	notify_ready_()
+	{
+		this->ready_.store(true, std::memory_order_release);
+		
+		this->ready_condition_.notify_all();
+		
+		for (auto &handler: this->handlers_)
+			boost::asio::post(*this->io_context_ptr_, std::move(handler));
+		this->handlers_.clear();
+		this->handlers_.shrink_to_fit();
+	}
+	
+	
+	
 	boost::asio::io_context *io_context_ptr_;
 	std::mutex mutex_;
 	std::condition_variable ready_condition_;
@@ -1182,14 +1207,7 @@ public:
 		if (this->ready())
 			throw std::future_error{std::future_errc::promise_already_satisfied};
 		
-		this->ready_.store(true, std::memory_order_release);
-		
-		this->ready_condition_.notify_all();
-		
-		for (auto &handler: this->handlers_)
-			boost::asio::post(*this->io_context_ptr_, std::move(handler));
-		this->handlers_.clear();
-		this->handlers_.shrink_to_fit();
+		this->notify_ready_();
 	}
 	
 	
@@ -1203,6 +1221,7 @@ public:
 		if (this->ready())
 			throw std::future_error{std::future_errc::promise_already_satisfied};
 		this->exception_ptr_ = std::move(exception_ptr);
+		this->notify_ready_();
 	}
 	
 	
@@ -1211,6 +1230,8 @@ public:
 	get()
 	{
 		this->wait();
+		if (this->exception_ptr_ != nullptr)
+			std::rethrow_exception(this->exception_ptr_);
 	}
 	
 	
@@ -1283,6 +1304,22 @@ public:
 		return init.result.get();
 	}
 private:
+	inline
+	void
+	notify_ready_()
+	{
+		this->ready_.store(true, std::memory_order_release);
+		
+		this->ready_condition_.notify_all();
+		
+		for (auto &handler: this->handlers_)
+			boost::asio::post(*this->io_context_ptr_, std::move(handler));
+		this->handlers_.clear();
+		this->handlers_.shrink_to_fit();
+	}
+	
+	
+	
 	boost::asio::io_context *io_context_ptr_;
 	std::mutex mutex_;
 	std::condition_variable ready_condition_;

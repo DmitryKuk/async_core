@@ -1,7 +1,5 @@
 // Author: Dmitry Kukovinets (d1021976@gmail.com), 24.12.2017, 15:16
 
-#include <iostream>
-
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/system_timer.hpp>
 
