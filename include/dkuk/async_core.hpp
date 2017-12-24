@@ -70,6 +70,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/optional.hpp>
 
@@ -143,7 +144,7 @@ public:
 			// Delay settings (mostly, actual for workers with children contexts)
 			std::size_t              delay_rounds         = 1;	// Delay after rounds without tasks executed (actual
 																// for worker without children too, if self
-																// io_serivice is stopped).
+																// io_context is stopped).
 			delay                    delay_policy         = delay::yield;
 			std::chrono::nanoseconds delay_value          = std::chrono::nanoseconds{default_delay::value};
 		};	// struct parameters
@@ -415,7 +416,7 @@ private:
 		boost::asio::io_context io_context_;
 		std::vector<node *> children_ptrs_;
 		std::vector<std::thread> workers_;
-		boost::optional<boost::asio::io_context::work> work_;
+		boost::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
 		std::vector<worker::parameters> worker_parameters_;
 		bool enabled_;
 	};	// struct node
@@ -618,7 +619,7 @@ private:
 			
 			try {
 				for (const auto &n: t.nodes_) {
-					if (n.concurrency_hint_.is_initialized()) {
+					if (static_cast<bool>(n.concurrency_hint_)) {
 						new(&(*this)[nodes_initialized]) node{
 							n.children_count_,
 							n.worker_parameters_,
@@ -861,7 +862,7 @@ private:
 		std::vector<node *> ordered_node_ptrs = this->order_nodes_();
 		for (auto it = ordered_node_ptrs.rbegin(), end = ordered_node_ptrs.rend(); it < end; ++it) {
 			auto &n = **it;
-			n.work_.emplace(n.io_context_);
+			n.work_guard_.emplace(boost::asio::make_work_guard(n.io_context_));
 			
 			for (const worker::parameters &parameters: n.worker_parameters_)
 				n.workers_.emplace_back(&async_core::worker_run_, this, std::ref(n), std::cref(parameters));
@@ -899,7 +900,7 @@ private:
 	stop_workers_()
 	{
 		for (auto &n: this->nodes_)
-			n.work_ = boost::none;
+			n.work_guard_ = boost::none;
 		for (auto &n: this->nodes_)
 			n.io_context_.stop();
 	}
