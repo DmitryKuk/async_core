@@ -161,9 +161,12 @@ print_avg_tasks(
 	constexpr std::size_t width = 5, precision = 2;
 	
 	const auto global_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(duration);
-	std::cout
-		<< std::setw(width) << std::setprecision(precision)
-		<< tasks / global_seconds.count() << std::setw(0);
+	std::cout << std::setw(width) << std::setprecision(precision);
+	if (global_seconds.count() > 1e-3)
+		std::cout << tasks / global_seconds.count();
+	else
+		std::cout << "--";
+	std::cout << std::setw(0);
 	return stream;
 }
 
