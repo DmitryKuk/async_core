@@ -9,7 +9,7 @@
 // Example 1: spawning coroutine with arguments.
 // void my_fn(boost::asio::ip::tcp::socket &s, int count, dkuk::coroutine_context context)
 // {
-//     boost::asio::system_timer timer{context.get_io_service()};
+//     boost::asio::system_timer timer{context.get_executor()};
 //     for (int i = 0; i < count; ++i) {
 //         std::cout << "Sleep #" << i << "..." << std::endl;
 //         timer.expires_from_now(std::chrono::seconds(1));
@@ -24,10 +24,10 @@
 //         throw boost::system::system_error{ec};
 // }
 // 
-// boost::asio::io_service io_service;
+// boost::asio::io_context io_context;
 // boost::asio::ip::tcp::socket s;
-// dkuk::spawn(io_service, my_fn, std::ref(s), 10);
-// io_service.run();
+// dkuk::spawn(io_context, my_fn, std::ref(s), 10);
+// io_context.run();
 // 
 // 
 // Example 2: continue coroutine manually.
@@ -60,7 +60,7 @@
 // 
 // Spawn signatures:
 //     spawn(
-//            <strand or io_service or coroutine_context>
+//            <strand or io_context or coroutine_context>
 //         [, std::allocator_arg, stack_alloc [, boost::context::preallocated],]
 //          , <function object with signature: void (Args &&..., coroutine_context)>
 //         [, Args... args]
@@ -68,8 +68,8 @@
 // 
 // NOTE:
 // - If strand gived, new coroutine will be attached to it. Use this for serialize several coroutines/etc.
-// - If io_service given, new strand will be created.
-// - If coroutine_context given, new strand will be created with given coroutine's io_service.
+// - If io_context given, new strand will be created.
+// - If coroutine_context given, new strand will be created with given coroutine's io_context.
 // - Args will be passed as object, not references (like std::thread). See std::ref().
 // - Args and allocators are optional.
 
@@ -78,18 +78,24 @@
 #define DKUK_SPAWN_HPP
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <exception>
 #include <functional>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
 
 #include <boost/asio/async_result.hpp>
 #include <boost/asio/handler_type.hpp>
-#include <boost/asio/io_service.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>
 #include <boost/context/continuation.hpp>
+#include <boost/optional.hpp>
 #include <boost/system/error_code.hpp>
 
 
@@ -116,7 +122,7 @@ private:
 		template<class Fn, class... Args>
 		inline
 		coro_data(
-			boost::asio::io_service::strand &strand,
+			boost::asio::io_context::strand strand,
 			Fn &&fn,
 			Args &&... args
 		):
@@ -125,14 +131,14 @@ private:
 					this->wrap_fn(std::forward<Fn>(fn), std::forward<Args>(args)...)
 				)
 			},
-			strand_{strand}
+			strand_{std::move(strand)}
 		{}
 		
 		
 		template<class StackAlloc, class Fn, class... Args>
 		inline
 		coro_data(
-			boost::asio::io_service::strand &strand,
+			boost::asio::io_context::strand strand,
 			std::allocator_arg_t,
 			StackAlloc salloc,
 			Fn &&fn,
@@ -144,14 +150,14 @@ private:
 					this->wrap_fn(std::forward<Fn>(fn), std::forward<Args>(args)...)
 				)
 			},
-			strand_{strand}
+			strand_{std::move(strand)}
 		{}
 		
 		
 		template<class StackAlloc, class Fn, class... Args>
 		inline
 		coro_data(
-			boost::asio::io_service::strand &strand,
+			boost::asio::io_context::strand strand,
 			std::allocator_arg_t,
 			boost::context::preallocated palloc,
 			StackAlloc salloc,
@@ -164,7 +170,7 @@ private:
 					this->wrap_fn(std::forward<Fn>(fn), std::forward<Args>(args)...)
 				)
 			},
-			strand_{strand}
+			strand_{std::move(strand)}
 		{}
 		
 		
@@ -191,7 +197,7 @@ private:
 		
 		
 		inline
-		boost::asio::io_service::strand &
+		boost::asio::io_context::strand &
 		strand() noexcept
 		{
 			return this->strand_;
@@ -202,7 +208,7 @@ private:
 		void
 		coro_start()
 		{
-			this->strand().post(coroutine_context::primitive_caller{this->shared_from_this()});
+			boost::asio::post(this->strand(), coroutine_context::primitive_caller{this->shared_from_this()});
 		}
 		
 		
@@ -284,7 +290,7 @@ private:
 		
 		
 		boost::context::continuation coro_caller_, *coro_execution_context_ptr_;
-		boost::asio::io_service::strand strand_;
+		boost::asio::io_context::strand strand_;
 		std::exception_ptr exception_ptr_;
 	};	// class coro_data
 	
@@ -364,11 +370,11 @@ public:
 	
 	
 	inline
-	boost::asio::io_service &
-	get_io_service() const
+	boost::asio::io_context::strand &
+	get_executor() const
 	{
 		const auto coro_data_ptr = this->lock_();
-		return coro_data_ptr->strand().get_io_service();
+		return coro_data_ptr->strand();
 	}
 	
 	
@@ -415,7 +421,7 @@ private:
 	void
 	continue_(std::shared_ptr<coro_data> coro_data_ptr)
 	{
-		coro_data_ptr->strand().post(coroutine_context::primitive_caller{coro_data_ptr});
+		coro_data_ptr->coro_start();
 	}
 	
 	
@@ -456,14 +462,26 @@ private:
 	boost::system::error_code *ec_ptr_ = nullptr;
 	
 	
+	
+	template<class T>
+	class coroutine_future_state;
+	
+	
+	
 	template<class... Ts>
 	friend class value;
 	
 	template<class... Ts>
 	friend class caller;
 	
+	template<class T>
+	friend class coroutine_future;
+	
+	template<class T>
+	friend class coroutine_promise;
+	
 	template<class... CoroArgs>
-	friend inline void spawn(boost::asio::io_service::strand strand, CoroArgs &&... coro_args);
+	friend inline void spawn(boost::asio::io_context::strand strand, CoroArgs &&... coro_args);
 };	// class coroutine_context
 
 
@@ -804,10 +822,10 @@ public:
 	
 	
 	inline
-	boost::asio::io_service &
-	get_io_service() const noexcept
+	boost::asio::io_context::strand &
+	get_executor() const noexcept
 	{
-		return this->coro_data_ptr_->strand().get_io_service();
+		return this->coro_data_ptr_->strand();
 	}
 	
 	
@@ -848,16 +866,876 @@ private:
 
 
 
+template<class T>
+class coroutine_context::coroutine_future_state
+{
+public:
+	inline
+	coroutine_future_state(
+		boost::asio::io_context &io_context
+	) noexcept:
+		io_context_ptr_{&io_context},
+		ready_{false}
+	{}
+	
+	
+	inline
+	bool
+	ready() const
+	{
+		return this->ready_;
+	}
+	
+	
+	template<class T1>
+	inline
+	void
+	set_value(T1 &&value)
+	{
+		std::unique_lock<std::mutex> lock{this->mutex_};
+		if (this->ready())
+			throw std::future_error{std::future_errc::promise_already_satisfied};
+		
+		this->value_.emplace(std::forward<T1>(value));
+		this->ready_.store(true, std::memory_order_release);
+		
+		this->ready_condition_.notify_all();
+		
+		for (auto &handler: this->handlers_)
+			boost::asio::post(*this->io_context_ptr_, std::move(handler));
+		this->handlers_.clear();
+		this->handlers_.shrink_to_fit();
+	}
+	
+	
+	inline
+	void
+	set_exception(
+		std::exception_ptr exception_ptr
+	)
+	{
+		std::lock_guard<std::mutex> lock{this->mutex_};
+		if (this->ready())
+			throw std::future_error{std::future_errc::promise_already_satisfied};
+		this->exception_ptr_ = std::move(exception_ptr);
+	}
+	
+	
+	inline
+	T
+	get()
+	{
+		this->wait();
+		return this->value_.get();
+	}
+	
+	
+	inline
+	void
+	wait()
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		this->ready_condition_.wait(
+			lock,
+			[&ready = this->ready_]() noexcept -> bool { return ready; }
+		);
+	}
+	
+	
+	template<class Rep, class Period>
+	inline
+	std::future_status
+	wait_for(
+		const std::chrono::duration<Rep, Period> &timeout_duration
+	)
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		bool ready =
+			this->ready_condition_.wait_for(
+				lock,
+				timeout_duration,
+				[&ready = this->ready_]() noexcept -> bool { return ready; }
+			);
+		return (ready)? std::future_status::ready: std::future_status::timeout;
+	}
+	
+	
+	template<class Clock, class Duration>
+	inline
+	std::future_status
+	wait_until(
+		const std::chrono::time_point<Clock, Duration> &timeout_time
+	)
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		bool ready =
+			this->ready_condition_.wait_for(
+				lock,
+				timeout_time,
+				[&ready = this->ready_]() noexcept -> bool { return ready; }
+			);
+		return (ready)? std::future_status::ready: std::future_status::timeout;
+	}
+	
+	
+	template<class Handler>
+	inline
+	typename boost::asio::async_result<Handler, void ()>::result_type
+	async_wait(
+		Handler &&handler
+	)
+	{
+		boost::asio::async_completion<Handler, void ()> init{handler};
+		std::unique_lock<std::mutex> lock{this->mutex_};
+		if (this->ready()) {
+			lock.unlock();
+			boost::asio::post(*this->io_context_ptr_, std::move(init.completion_handler));
+		} else {
+			this->handlers_.emplace_back(std::move(init.completion_handler));
+		}
+		return init.result.get();
+	}
+private:
+	boost::asio::io_context *io_context_ptr_;
+	std::mutex mutex_;
+	std::condition_variable ready_condition_;
+	std::vector<std::function<void ()>> handlers_;
+	std::atomic<bool> ready_;
+	boost::optional<T> value_;
+	std::exception_ptr exception_ptr_;
+};	// class coroutine_context::coroutine_future_state
+
+
+
+template<class T>
+class coroutine_context::coroutine_future_state<T &>
+{
+public:
+	inline
+	coroutine_future_state(
+		boost::asio::io_context &io_context
+	) noexcept:
+		io_context_ptr_{&io_context},
+		ready_{false}
+	{}
+	
+	
+	inline
+	bool
+	ready() const
+	{
+		return this->ready_;
+	}
+	
+	
+	inline
+	void
+	set_value(T &value)
+	{
+		std::unique_lock<std::mutex> lock{this->mutex_};
+		if (this->ready())
+			throw std::future_error{std::future_errc::promise_already_satisfied};
+		
+		this->value_ptr_ = std::addressof(value);
+		this->ready_.store(true, std::memory_order_release);
+		
+		this->ready_condition_.notify_all();
+		
+		for (auto &handler: this->handlers_)
+			boost::asio::post(*this->io_context_ptr_, std::move(handler));
+		this->handlers_.clear();
+		this->handlers_.shrink_to_fit();
+	}
+	
+	
+	inline
+	void
+	set_exception(
+		std::exception_ptr exception_ptr
+	)
+	{
+		std::lock_guard<std::mutex> lock{this->mutex_};
+		if (this->ready())
+			throw std::future_error{std::future_errc::promise_already_satisfied};
+		this->exception_ptr_ = std::move(exception_ptr);
+	}
+	
+	
+	inline
+	T &
+	get()
+	{
+		this->wait();
+		return *this->value_ptr_;
+	}
+	
+	
+	inline
+	void
+	wait()
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		this->ready_condition_.wait(
+			lock,
+			[&ready = this->ready_]() noexcept -> bool { return ready; }
+		);
+	}
+	
+	
+	template<class Rep, class Period>
+	inline
+	std::future_status
+	wait_for(
+		const std::chrono::duration<Rep, Period> &timeout_duration
+	)
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		bool ready =
+			this->ready_condition_.wait_for(
+				lock,
+				timeout_duration,
+				[&ready = this->ready_]() noexcept -> bool { return ready; }
+			);
+		return (ready)? std::future_status::ready: std::future_status::timeout;
+	}
+	
+	
+	template<class Clock, class Duration>
+	inline
+	std::future_status
+	wait_until(
+		const std::chrono::time_point<Clock, Duration> &timeout_time
+	)
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		bool ready =
+			this->ready_condition_.wait_for(
+				lock,
+				timeout_time,
+				[&ready = this->ready_]() noexcept -> bool { return ready; }
+			);
+		return (ready)? std::future_status::ready: std::future_status::timeout;
+	}
+	
+	
+	template<class Handler>
+	inline
+	typename boost::asio::async_result<Handler, void ()>::result_type
+	async_wait(
+		Handler &&handler
+	)
+	{
+		boost::asio::async_completion<Handler, void ()> init{handler};
+		std::unique_lock<std::mutex> lock{this->mutex_};
+		if (this->ready()) {
+			lock.unlock();
+			boost::asio::post(*this->io_context_ptr_, std::move(init.completion_handler));
+		} else {
+			this->handlers_.emplace_back(std::move(init.completion_handler));
+		}
+		return init.result.get();
+	}
+private:
+	boost::asio::io_context *io_context_ptr_;
+	std::mutex mutex_;
+	std::condition_variable ready_condition_;
+	std::vector<std::function<void ()>> handlers_;
+	std::atomic<bool> ready_;
+	T * value_ptr_;
+	std::exception_ptr exception_ptr_;
+};	// class coroutine_context::coroutine_future_state<T &>
+
+
+
+template<>
+class coroutine_context::coroutine_future_state<void>
+{
+public:
+	inline
+	coroutine_future_state(
+		boost::asio::io_context &io_context
+	) noexcept:
+		io_context_ptr_{&io_context},
+		ready_{false}
+	{}
+	
+	
+	inline
+	bool
+	ready() const
+	{
+		return this->ready_;
+	}
+	
+	
+	inline
+	void
+	set_value()
+	{
+		std::unique_lock<std::mutex> lock{this->mutex_};
+		if (this->ready())
+			throw std::future_error{std::future_errc::promise_already_satisfied};
+		
+		this->ready_.store(true, std::memory_order_release);
+		
+		this->ready_condition_.notify_all();
+		
+		for (auto &handler: this->handlers_)
+			boost::asio::post(*this->io_context_ptr_, std::move(handler));
+		this->handlers_.clear();
+		this->handlers_.shrink_to_fit();
+	}
+	
+	
+	inline
+	void
+	set_exception(
+		std::exception_ptr exception_ptr
+	)
+	{
+		std::lock_guard<std::mutex> lock{this->mutex_};
+		if (this->ready())
+			throw std::future_error{std::future_errc::promise_already_satisfied};
+		this->exception_ptr_ = std::move(exception_ptr);
+	}
+	
+	
+	inline
+	void
+	get()
+	{
+		this->wait();
+	}
+	
+	
+	inline
+	void
+	wait()
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		this->ready_condition_.wait(
+			lock,
+			[&ready = this->ready_]() noexcept -> bool { return ready; }
+		);
+	}
+	
+	
+	template<class Rep, class Period>
+	inline
+	std::future_status
+	wait_for(
+		const std::chrono::duration<Rep, Period> &timeout_duration
+	)
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		bool ready =
+			this->ready_condition_.wait_for(
+				lock,
+				timeout_duration,
+				[&ready = this->ready_]() noexcept -> bool { return ready; }
+			);
+		return (ready)? std::future_status::ready: std::future_status::timeout;
+	}
+	
+	
+	template<class Clock, class Duration>
+	inline
+	std::future_status
+	wait_until(
+		const std::chrono::time_point<Clock, Duration> &timeout_time
+	)
+	{
+		std::mutex mutex;
+		std::unique_lock<std::mutex> lock{mutex};
+		bool ready =
+			this->ready_condition_.wait_for(
+				lock,
+				timeout_time,
+				[&ready = this->ready_]() noexcept -> bool { return ready; }
+			);
+		return (ready)? std::future_status::ready: std::future_status::timeout;
+	}
+	
+	
+	template<class Handler>
+	inline
+	typename boost::asio::async_result<Handler, void ()>::result_type
+	async_wait(
+		Handler &&handler
+	)
+	{
+		boost::asio::async_completion<Handler, void ()> init{handler};
+		std::unique_lock<std::mutex> lock{this->mutex_};
+		if (this->ready()) {
+			lock.unlock();
+			boost::asio::post(*this->io_context_ptr_, std::move(init.completion_handler));
+		} else {
+			this->handlers_.emplace_back(std::move(init.completion_handler));
+		}
+		return init.result.get();
+	}
+private:
+	boost::asio::io_context *io_context_ptr_;
+	std::mutex mutex_;
+	std::condition_variable ready_condition_;
+	std::vector<std::function<void ()>> handlers_;
+	std::atomic<bool> ready_;
+	std::exception_ptr exception_ptr_;
+};	// class coroutine_context::coroutine_future_state<void>
+
+
+
+template<class T>
+class coroutine_future
+{
+public:
+	inline
+	coroutine_future(
+		boost::asio::io_context &io_context
+	) noexcept:
+		io_context_ptr_{&io_context}
+	{}
+	
+	
+	coroutine_future(
+		coroutine_future &&other
+	) = default;
+	
+	
+	coroutine_future &
+	operator=(
+		coroutine_future &&other
+	) = default;
+	
+	
+	coroutine_future(
+		const coroutine_future &other
+	) = default;
+	
+	
+	coroutine_future &
+	operator=(
+		const coroutine_future &other
+	) = default;
+	
+	
+	inline
+	std::future<T>
+	get_std_future()
+	{
+		const std::shared_ptr<coroutine_context::coroutine_future_state<T>> state_ptr = this->state_ptr_;
+		if (state_ptr == nullptr)
+			return std::future<T>{};
+		
+		std::promise<T> promise;
+		std::future<T> future = promise.get_future();
+		this->async_wait(
+			[state_ptr = std::move(state_ptr), promise = std::move(promise)]
+			{
+				try {
+					promise.set_value(state_ptr->get());
+				} catch (const std::exception & /* e */) {
+					promise.set_exception(std::current_exception());
+				}
+			}
+		);
+		return future;
+	}
+	
+	
+	inline
+	bool
+	ready() const
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->ready();
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	inline
+	auto
+	get() const
+		-> decltype(auto)
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->get();
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	inline
+	bool
+	valid() const noexcept
+	{
+		return (this->state_ptr_ != nullptr)? true: false;
+	}
+	
+	
+	inline
+	void
+	wait() const
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->wait();
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	template<class Rep, class Period>
+	inline
+	std::future_status
+	wait_for(
+		const std::chrono::duration<Rep, Period> &timeout_duration
+	) const
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->wait_for(timeout_duration);
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	template<class Clock, class Duration>
+	inline
+	std::future_status
+	wait_until(
+		const std::chrono::time_point<Clock, Duration> &timeout_time
+	) const
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->wait_until(timeout_time);
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	template<class Handler>
+	inline
+	typename boost::asio::async_result<Handler, void ()>::result_type
+	async_wait(
+		Handler &&handler
+	) const
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->async_wait(std::forward<Handler>(handler));
+		throw std::future_error{std::future_errc::no_state};
+	}
+private:
+	template<class T1>
+	friend class coroutine_promise;
+	
+	
+	
+	inline
+	coroutine_future(
+		boost::asio::io_context &io_context,
+		std::shared_ptr<coroutine_context::coroutine_future_state<T>> state_ptr
+	) noexcept:
+		io_context_ptr_{&io_context},
+		state_ptr_{std::move(state_ptr)}
+	{}
+	
+	
+	
+	boost::asio::io_context *io_context_ptr_;
+	std::shared_ptr<coroutine_context::coroutine_future_state<T>> state_ptr_;
+};	// class coroutine_future
+
+
+
+template<class T>
+class coroutine_promise
+{
+public:
+	inline
+	coroutine_promise(
+		boost::asio::io_context &io_context
+	):
+		io_context_ptr_{&io_context},
+		state_ptr_{std::make_shared<coroutine_context::coroutine_future_state<T>>(io_context)}
+	{}
+	
+	
+	template<class Alloc>
+	inline
+	coroutine_promise(
+		boost::asio::io_context &io_context,
+		std::allocator_arg_t,
+		const Alloc &alloc
+	):
+		io_context_ptr_{&io_context},
+		state_ptr_{std::allocate_shared<coroutine_context::coroutine_future_state<T>>(alloc, io_context)}
+	{}
+	
+	
+	coroutine_promise(
+		coroutine_promise &&other
+	) = default;
+	
+	
+	coroutine_promise &
+	operator=(
+		coroutine_promise &&other
+	) = default;
+	
+	
+	coroutine_promise(
+		coroutine_promise &other
+	) = default;
+	
+	
+	coroutine_promise &
+	operator=(
+		coroutine_promise &other
+	) = default;
+	
+	
+	inline
+	coroutine_future<T>
+	get_future() const noexcept
+	{
+		return coroutine_future<T>{*this->io_context_ptr_, this->state_ptr_};
+	}
+	
+	
+	inline
+	void
+	set_value(
+		T &&value
+	)
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->set_value(std::move(value));
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	inline
+	void
+	set_value(
+		const T &value
+	)
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->set_value(value);
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	inline
+	void
+	set_exception(
+		std::exception_ptr exception_ptr
+	)
+	{
+		coroutine_context::coroutine_future_state<T> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->set_exception(std::move(exception_ptr));
+		throw std::future_error{std::future_errc::no_state};
+	}
+private:
+	boost::asio::io_context *io_context_ptr_;
+	std::shared_ptr<coroutine_context::coroutine_future_state<T>> state_ptr_;
+};	// class coroutine_promise
+
+
+
+template<class T>
+class coroutine_promise<T &>
+{
+public:
+	inline
+	coroutine_promise(
+		boost::asio::io_context &io_context
+	):
+		io_context_ptr_{&io_context},
+		state_ptr_{std::make_shared<coroutine_context::coroutine_future_state<T &>>(io_context)}
+	{}
+	
+	
+	template<class Alloc>
+	inline
+	coroutine_promise(
+		boost::asio::io_context &io_context,
+		std::allocator_arg_t,
+		const Alloc &alloc
+	):
+		io_context_ptr_{&io_context},
+		state_ptr_{std::allocate_shared<coroutine_context::coroutine_future_state<T &>>(alloc, io_context)}
+	{}
+	
+	
+	coroutine_promise(
+		coroutine_promise &&other
+	) = default;
+	
+	
+	coroutine_promise &
+	operator=(
+		coroutine_promise &&other
+	) = default;
+	
+	
+	coroutine_promise(
+		coroutine_promise &other
+	) = default;
+	
+	
+	coroutine_promise &
+	operator=(
+		coroutine_promise &other
+	) = default;
+	
+	
+	inline
+	coroutine_future<T &>
+	get_future() const noexcept
+	{
+		return coroutine_future<T &>{*this->io_context_ptr_, this->state_ptr_};
+	}
+	
+	
+	inline
+	void
+	set_value(
+		T &value
+	)
+	{
+		coroutine_context::coroutine_future_state<T &> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->set_value(value);
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	inline
+	void
+	set_exception(
+		std::exception_ptr exception_ptr
+	)
+	{
+		coroutine_context::coroutine_future_state<T &> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->set_exception(std::move(exception_ptr));
+		throw std::future_error{std::future_errc::no_state};
+	}
+private:
+	boost::asio::io_context *io_context_ptr_;
+	std::shared_ptr<coroutine_context::coroutine_future_state<T &>> state_ptr_;
+};	// class coroutine_promise<T &>
+
+
+
+template<>
+class coroutine_promise<void>
+{
+public:
+	inline
+	coroutine_promise(
+		boost::asio::io_context &io_context
+	):
+		io_context_ptr_{&io_context},
+		state_ptr_{std::make_shared<coroutine_context::coroutine_future_state<void>>(io_context)}
+	{}
+	
+	
+	template<class Alloc>
+	inline
+	coroutine_promise(
+		boost::asio::io_context &io_context,
+		std::allocator_arg_t,
+		const Alloc &alloc
+	):
+		io_context_ptr_{&io_context},
+		state_ptr_{std::allocate_shared<coroutine_context::coroutine_future_state<void>>(alloc, io_context)}
+	{}
+	
+	
+	coroutine_promise(
+		coroutine_promise &&other
+	) = default;
+	
+	
+	coroutine_promise &
+	operator=(
+		coroutine_promise &&other
+	) = default;
+	
+	
+	coroutine_promise(
+		coroutine_promise &other
+	) = default;
+	
+	
+	coroutine_promise &
+	operator=(
+		coroutine_promise &other
+	) = default;
+	
+	
+	inline
+	coroutine_future<void>
+	get_future() const noexcept
+	{
+		return coroutine_future<void>{*this->io_context_ptr_, this->state_ptr_};
+	}
+	
+	
+	inline
+	void
+	set_value()
+	{
+		coroutine_context::coroutine_future_state<void> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->set_value();
+		throw std::future_error{std::future_errc::no_state};
+	}
+	
+	
+	inline
+	void
+	set_exception(
+		std::exception_ptr exception_ptr
+	)
+	{
+		coroutine_context::coroutine_future_state<void> * const state_ptr = this->state_ptr_.get();
+		if (state_ptr != nullptr)
+			return state_ptr->set_exception(std::move(exception_ptr));
+		throw std::future_error{std::future_errc::no_state};
+	}
+private:
+	boost::asio::io_context *io_context_ptr_;
+	std::shared_ptr<coroutine_context::coroutine_future_state<void>> state_ptr_;
+};	// class coroutine_promise<void>
+
+
+
 template<class... CoroArgs>
 inline
 void
 spawn(
-	boost::asio::io_service::strand strand,
+	boost::asio::io_context::strand strand,
 	CoroArgs &&... coro_args
 )
 {
-	auto coro_data_ptr = std::make_shared<coroutine_context::coro_data>(strand, std::forward<CoroArgs>(coro_args)...);
-	coro_data_ptr->coro_start();
+	coroutine_context::continue_(
+		std::make_shared<coroutine_context::coro_data>(std::move(strand), std::forward<CoroArgs>(coro_args)...)
+	);
 }
 
 
@@ -865,11 +1743,11 @@ template<class... CoroArgs>
 inline
 void
 spawn(
-	boost::asio::io_service &io_service,
+	boost::asio::io_context &io_context,
 	CoroArgs &&... coro_args
 )
 {
-	return spawn(boost::asio::io_service::strand{io_service}, std::forward<CoroArgs>(coro_args)...);
+	return spawn(boost::asio::io_context::strand{io_context}, std::forward<CoroArgs>(coro_args)...);
 }
 
 
@@ -881,7 +1759,171 @@ spawn(
 	CoroArgs &&... coro_args
 )
 {
-	return spawn(context.get_io_service(), std::forward<CoroArgs>(coro_args)...);
+	return spawn(context.get_executor().context(), std::forward<CoroArgs>(coro_args)...);
+}
+
+
+
+template<class Fn, class... Args>
+inline
+auto
+spawn_with_future(
+	boost::asio::io_context::strand strand,
+	Fn &&fn,
+	Args &&... args
+)
+{
+	using result_type = decltype(std::forward<Fn>(fn)(std::move(args)..., std::declval<coroutine_context>()));
+	
+	coroutine_promise<result_type> result_promise{strand.context()};
+	coroutine_future<result_type> result_future = result_promise.get_future();
+	
+	spawn(
+		std::move(strand),
+		
+		[fn = std::forward<Fn>(fn), result_promise = std::move(result_promise)](auto &&... args) mutable
+		{
+			try {
+				result_promise.set_value(std::move(fn)(std::move(args)...));
+			} catch (const std::exception & /* e */) {
+				result_promise.set_exception(std::current_exception());
+			}
+		},
+		
+		std::forward<Args>(args)...
+	);
+	
+	return result_future;
+}
+
+
+template<class StackAlloc, class Fn, class... Args>
+inline
+auto
+spawn_with_future(
+	boost::asio::io_context::strand strand,
+	std::allocator_arg_t,
+	StackAlloc salloc,
+	Fn &&fn,
+	Args &&... args
+)
+{
+	using result_type = decltype(std::forward<Fn>(fn)(std::move(args)..., std::declval<coroutine_context>()));
+	
+	coroutine_promise<result_type> result_promise{strand.context()};
+	coroutine_future<result_type> result_future = result_promise.get_future();
+	
+	spawn(
+		std::move(strand),
+		
+		std::allocator_arg,
+		std::move(salloc),
+		
+		[fn = std::forward<Fn>(fn), result_promise = std::move(result_promise)](auto &&... args) mutable
+		{
+			try {
+				result_promise.set_value(std::move(fn)(std::move(args)...));
+			} catch (const std::exception & /* e */) {
+				result_promise.set_exception(std::current_exception());
+			}
+		},
+		
+		std::forward<Args>(args)...
+	);
+	
+	return result_future;
+}
+
+
+template<class StackAlloc, class Fn, class... Args>
+inline
+auto
+spawn_with_future(
+	boost::asio::io_context::strand strand,
+	std::allocator_arg_t,
+	boost::context::preallocated palloc,
+	StackAlloc salloc,
+	Fn &&fn,
+	Args &&... args
+)
+{
+	using result_type = decltype(std::forward<Fn>(fn)(std::move(args)..., std::declval<coroutine_context>()));
+	
+	coroutine_promise<result_type> result_promise{strand.context()};
+	coroutine_future<result_type> result_future = result_promise.get_future();
+	
+	spawn(
+		std::move(strand),
+		
+		std::allocator_arg,
+		std::move(palloc),
+		std::move(salloc),
+		
+		[fn = std::forward<Fn>(fn), result_promise = std::move(result_promise)](auto &&... args) mutable
+		{
+			try {
+				result_promise.set_value(std::move(fn)(std::move(args)...));
+			} catch (const std::exception & /* e */) {
+				result_promise.set_exception(std::current_exception());
+			}
+		},
+		
+		std::forward<Args>(args)...
+	);
+	
+	return result_future;
+}
+
+
+template<class... CoroArgs>
+inline
+auto
+spawn_with_future(
+	boost::asio::io_context &io_context,
+	CoroArgs &&... coro_args
+)
+{
+	return spawn_with_future(boost::asio::io_context::strand{io_context}, std::forward<CoroArgs>(coro_args)...);
+}
+
+
+template<class... CoroArgs>
+inline
+auto
+spawn_with_future(
+	const coroutine_context &context,
+	CoroArgs &&... coro_args
+)
+{
+	return spawn_with_future(context.get_executor(), std::forward<CoroArgs>(coro_args)...);
+}
+
+
+
+template<class T, class Rep, class Period>
+inline
+coroutine_future<T>
+run_until_complete(
+	boost::asio::io_context &io_context,
+	coroutine_future<T> result_future,
+	std::chrono::duration<Rep, Period> timeout_duration
+)
+{
+	while (!result_future.ready())
+		io_context.run_one_for(timeout_duration);
+	return result_future;
+}
+
+
+template<class T>
+inline
+coroutine_future<T>
+run_until_complete(
+	boost::asio::io_context &io_context,
+	coroutine_future<T> result_future
+)
+{
+	return run_until_complete(io_context, std::move(result_future), std::chrono::seconds{1});
 }
 
 

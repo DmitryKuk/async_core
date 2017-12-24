@@ -2,7 +2,7 @@
 
 
 // This example demonstrates basic usage of async_core.
-// Create core, get io_services, post tasks, start and stop the core.
+// Create core, get io_contexts, post tasks, start and stop the core.
 
 
 #include <chrono>
@@ -34,10 +34,10 @@ main()
 		};
 	
 	
-	dkuk::async_core::service_tree t;
-	const auto s0 = t.add_service(0, 1);
-	const auto s1 = t.add_service(s0, 1);
-	const auto s2 = t.add_service(s1, 1);
+	dkuk::async_core::context_tree t;
+	const auto s0 = t.add_context(0, 1);
+	const auto s1 = t.add_context(s0, 1);
+	const auto s2 = t.add_context(s1, 1);
 	
 	
 	dkuk::async_core core{t, handle_exception, false};
@@ -45,17 +45,15 @@ main()
 	
 	std::size_t task_id = 0;
 	const auto post_task =
-		[&](auto service_id)
+		[&](auto context_id)
 		{
-			core.get_io_service(service_id).post(
-				[&, service_id, task_id]
+			core.get_io_context(context_id).post(
+				[&, context_id, task_id]
 				{
 					{
 						std::lock_guard<std::mutex> cout_lock{cout_mutex};
 						std::cout
-							<< "Task " << task_id
-							<< " from service "
-							<< service_id
+							<< "Task " << task_id << " from context " << context_id
 							<< " runned by thread: " << std::this_thread::get_id() << '.' << std::endl;
 					}
 					
@@ -68,7 +66,7 @@ main()
 			
 			{
 				std::lock_guard<std::mutex> cout_lock{cout_mutex};
-				std::cout << "Task " << task_id << " posted to service " << service_id << '.' << std::endl;
+				std::cout << "Task " << task_id << " posted to context " << context_id << '.' << std::endl;
 			}
 			++task_id;
 		};

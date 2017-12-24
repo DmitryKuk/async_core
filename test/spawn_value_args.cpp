@@ -6,7 +6,8 @@
 #include <functional>
 #include <exception>
 
-#include <boost/asio/io_service.hpp>
+#include <boost/asio/async_result.hpp>
+#include <boost/asio/io_context.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <dkuk/spawn.hpp>
@@ -16,17 +17,11 @@ namespace {
 
 
 template<class... Args>
-auto
+typename boost::asio::async_result<dkuk::coroutine_context, void (Args...)>::return_type
 async_apply(dkuk::coroutine_context context, Args... args)
-	-> BOOST_ASIO_INITFN_RESULT_TYPE(dkuk::coroutine_context, void (Args...))
 {
-	auto &io_service = context.get_io_service();
-	
-	boost::asio::detail::async_result_init<dkuk::coroutine_context, void (Args...)>
-		init{std::move(context)};
-	
-	io_service.post(std::bind(std::move(init.handler), std::move(args)...));
-	
+	boost::asio::async_completion<dkuk::coroutine_context, void (Args...)> init{context};
+	context.get_executor().post(std::bind(std::move(init.completion_handler), std::move(args)...));
 	return init.result.get();
 }
 
@@ -88,7 +83,7 @@ int
 main()
 {
 	int status = 0;
-	boost::asio::io_service io_service;
+	boost::asio::io_context io_context;
 	
 	const int i = 100500;
 	const std::string s = "hello, world";
@@ -97,7 +92,7 @@ main()
 	
 	// Without boost::system::error_code
 	dkuk::spawn(
-		io_service,
+		io_context,
 		
 		[&](auto context)
 		{
@@ -120,7 +115,7 @@ main()
 	
 	
 	dkuk::spawn(
-		io_service,
+		io_context,
 		
 		[&](auto context)
 		{
@@ -144,7 +139,7 @@ main()
 	
 	
 	dkuk::spawn(
-		io_service,
+		io_context,
 		
 		[&](auto context)
 		{
@@ -170,7 +165,7 @@ main()
 	
 	// With boost::system::error_code
 	dkuk::spawn(
-		io_service,
+		io_context,
 		
 		[&](auto context)
 		{
@@ -193,7 +188,7 @@ main()
 	
 	
 	dkuk::spawn(
-		io_service,
+		io_context,
 		
 		[&](auto context)
 		{
@@ -217,7 +212,7 @@ main()
 	
 	
 	dkuk::spawn(
-		io_service,
+		io_context,
 		
 		[&](auto context)
 		{
@@ -240,7 +235,7 @@ main()
 	);
 	
 	
-	io_service.run();
+	io_context.run();
 	
 	return status;
 }
