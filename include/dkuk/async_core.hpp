@@ -25,7 +25,7 @@
 //     - Are some of your io_contexts under high-load? Do you want save some CPU percents?
 // 1. Map your application structure to async_core's terms:
 //     - Create async_core::context_tree.
-//     - Add contexts with their parent-child relationship.
+//     - Add contexts with their parent-child relationship. NOTE: Contexts ids guaranteed to be sequence: 0, 1, 2, ...
 //     - Set workers with appropriate parameters for each context.
 // 2. Create and start async_core.
 // 3. Using async_core::get_io_context() get your io_contexts, post tasks, etc...
