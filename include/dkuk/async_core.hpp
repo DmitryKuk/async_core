@@ -81,7 +81,8 @@ namespace dkuk {
 class async_core
 {
 public:
-	using context_id_type = std::size_t;
+	using context_id_type        = std::size_t;
+	using worker_id_type         = std::size_t;
 	using exception_handler_type = std::function<void (const std::exception &)>;
 	
 	
@@ -184,7 +185,7 @@ public:
 		void
 		set_worker_parameters(
 			context_id_type context_id,
-			std::size_t worker,
+			worker_id_type worker,
 			const worker::parameters &parameters
 		)
 		{
@@ -194,23 +195,29 @@ public:
 		
 		
 		inline
-		void
+		worker_id_type
 		add_worker(
 			context_id_type context_id,
 			const worker::parameters &parameters
 		)
 		{
-			this->nodes_.at(context_id).worker_parameters_.push_back(async_core::fixed_worker_parameters_(parameters));
+			node &n = this->nodes_.at(context_id);
+			const worker_id_type worker_id = n.worker_parameters_.size();
+			n.worker_parameters_.push_back(async_core::fixed_worker_parameters_(parameters));
+			return worker_id;
 		}
 		
 		
 		inline
-		void
+		worker_id_type
 		add_worker(
 			context_id_type context_id
 		)
 		{
-			this->nodes_.at(context_id).worker_parameters_.emplace_back();
+			node &n = this->nodes_.at(context_id);
+			const worker_id_type worker_id = n.worker_parameters_.size();
+			n.worker_parameters_.emplace_back();
+			return worker_id;
 		}
 	private:
 		friend class async_core;
