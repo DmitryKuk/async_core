@@ -76,8 +76,8 @@
 // - Args and allocators are optional.
 
 
-#ifndef DKUK_SPAWN_HPP
-#define DKUK_SPAWN_HPP
+#ifndef DKUK_COROUTINE_HPP
+#define DKUK_COROUTINE_HPP
 
 #include <atomic>
 #include <chrono>
@@ -1994,33 +1994,33 @@ namespace boost {
 namespace asio {
 
 
-#define DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE(src_type)						\
-	template<class Ret, class... Args>										\
-	struct handler_type<src_type, Ret (Args...)>							\
-	{																		\
-		using type = dkuk::coroutine_context::caller<Args...>;				\
+#define DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE(src_type)						\
+	template<class Ret, class... Args>											\
+	struct handler_type<src_type, Ret (Args...)>								\
+	{																			\
+		using type = dkuk::coroutine_context::caller<Args...>;					\
 	}	/* struct handler_type<src_type, Ret (Args...)> */
 
 
-#define DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type)				\
-	DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE(src_type   );						\
-	DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE(src_type & );						\
-	DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE(src_type &&)
+#define DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type)				\
+	DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE(src_type   );						\
+	DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE(src_type & );						\
+	DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE(src_type &&)
 
 
-#define DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_SERIES(src_type)				\
-	DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type               );	\
-	DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type const         );	\
-	DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type       volatile);	\
-	DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type const volatile)
+#define DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_SERIES(src_type)				\
+	DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type               );	\
+	DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type const         );	\
+	DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type       volatile);	\
+	DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_ADD_REF(src_type const volatile)
 
 
-DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_SERIES(dkuk::coroutine_context);
+DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_SERIES(dkuk::coroutine_context);
 
 
-#undef DKUK_SPAWN_DEFINE_ASIO_HELPERS_SERIES
-#undef DKUK_SPAWN_DEFINE_ASIO_HANDLER_TYPE_ADD_REF
-#undef DKUK_SPAWN_DEFINE_ASIO_HELPERS
+#undef DKUK_COROUTINE_I_DEFINE_ASIO_HELPERS_SERIES
+#undef DKUK_COROUTINE_I_DEFINE_ASIO_HANDLER_TYPE_ADD_REF
+#undef DKUK_COROUTINE_I_DEFINE_ASIO_HELPERS
 
 
 
@@ -2057,4 +2057,4 @@ private:
 };	// namespace boost
 
 
-#endif	// DKUK_SPAWN_HPP
+#endif	// DKUK_COROUTINE_HPP
