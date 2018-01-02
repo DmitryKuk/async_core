@@ -3,6 +3,7 @@
 
 import testing ;
 
-run spawn_value_args.cpp /async_core//async_core ;
-run run_until_complete.cpp /async_core//async_core ;
+run context_group.cpp                /async_core//async_core ;
+run run_until_complete.cpp           /async_core//async_core ;
 run run_until_complete_exception.cpp /async_core//async_core ;
+run spawn_value_args.cpp             /async_core//async_core ;
