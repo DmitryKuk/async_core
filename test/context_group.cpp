@@ -11,7 +11,7 @@ int
 main()
 {
 	boost::asio::io_context context1, context2, context3;
-	const dkuk::context_group group{{context1, context2, context3}};
+	const dkuk::context_group group{context1, context2, context3};
 	
 	
 	try {

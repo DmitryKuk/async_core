@@ -1,9 +1,22 @@
 // Author: Dmitry Kukovinets (d1021976@gmail.com), 02.01.2018, 01:41
 
+
+// Minimalistic context handler with Round-Robbin switching.
+// 
+// Usage:
+// // Create contexts and group
+// boost::asio::io_context context1, context2, ...;
+// dkuk::context_group group{context1, context2, ...};	// NOTE: Group does NOT take ownership on io_contexts.
+// 
+// // Get io_contexts from group using .get_io_context()
+// boost::asio::ip::tcp::socket socket{group.get_io_context()};
+
+
 #ifndef DKUK_CONTEXT_GROUP_HPP
 #define DKUK_CONTEXT_GROUP_HPP
 
 #include <atomic>
+#include <functional>
 #include <initializer_list>
 #include <stdexcept>
 #include <unordered_set>
@@ -21,18 +34,17 @@ public:
 	context_group() = default;
 	
 	
-	template<class ForwardIterator>
+	template<class InputIterator>
 	context_group(
-		ForwardIterator first,
-		ForwardIterator last
+		InputIterator first,
+		InputIterator last
 	)
 	{
 		std::unordered_set<boost::asio::io_context *> contexts_filter;
 		for ( ; first != last; ++first) {
-			boost::asio::io_context &context_ref = *first;
-			boost::asio::io_context * const context = &context_ref;
-			if (contexts_filter.insert(context).second)
-				this->contexts_.push_back(context);
+			boost::asio::io_context &context = *first;
+			if (contexts_filter.insert(&context).second)
+				this->contexts_.push_back(&context);
 		}
 		this->contexts_.shrink_to_fit();
 	}
