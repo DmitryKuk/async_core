@@ -3,6 +3,8 @@
 
 // Minimalistic context handler with Round-Robbin switching.
 // 
+// NOTE: dkuk::context_group is almost thread-safe. Only non-thread-safe are move constructor and move assign operator.
+// 
 // Usage:
 // // Create contexts and group
 // boost::asio::io_context context1, context2, ...;
@@ -35,6 +37,7 @@ public:
 	
 	
 	template<class InputIterator>
+	explicit
 	context_group(
 		InputIterator first,
 		InputIterator last
@@ -50,7 +53,7 @@ public:
 	}
 	
 	
-	inline
+	explicit inline
 	context_group(
 		std::initializer_list<std::reference_wrapper<boost::asio::io_context>> contexts
 	):
@@ -69,15 +72,27 @@ public:
 	) = delete;
 	
 	
+	// Thread-safe: No.
+	inline
 	context_group(
 		context_group &&other
-	) = delete;
+	) noexcept:
+		index_{other.index_.exchange(0, std::memory_order_acq_rel)},
+		contexts_{std::move(other.contexts_)}
+	{}
 	
 	
+	// Thread-safe: No.
+	inline
 	context_group &
 	operator=(
 		context_group &&other
-	) = delete;
+	) noexcept
+	{
+		this->index_ = other.index_.exchange(0, std::memory_order_acq_rel);
+		this->contexts_ = std::move(other.contexts_);
+		return *this;
+	}
 	
 	
 	inline
